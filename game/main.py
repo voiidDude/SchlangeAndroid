@@ -4,11 +4,6 @@ import os
 import sys
 
 pygame.init()
-try:
-    pygame.mixer.init()
-    sound_enabled = True
-except pygame.error:
-    sound_enabled = False
 
 def resource_path(relative_path):
     try:
@@ -31,6 +26,7 @@ def loadIt():
             return int(arquivo.read())
     except (FileNotFoundError, ValueError):
         return 0
+
 
 class mona:
     w = 640
@@ -90,21 +86,72 @@ Tahoma = pygame.font.SysFont("Tahoma", 24)
 escTesc = Tahoma.render("esc para fechar o jogo", True, (255, 255, 255))
 gameOver = Tahoma.render("ESTÁ MORTO!", True, (255, 255, 255))
 beaten_hiScore = Tahoma.render("NOVO RECORDE!!", True, (255, 255, 255))
+tocarContinuar = Tahoma.render("toque para continuar", True, (255, 255, 255))
+tocarReiniciar = Tahoma.render("toque para reiniciar", True, (255, 255, 255))
+sairT = Tahoma.render("sair", True, (255, 255, 255))
 
 gameState = 0
 paused = False
 timingBrochacho = 0
 
-monalisa = pygame.display.set_mode((mona.w, mona.h))
+monalisa = pygame.display.set_mode((mona.w, mona.h), pygame.SCALED)
 pygame.display.set_caption("Schlange")
 pygame.display.set_icon(pygame.transform.smoothscale(pygame.image.load(resource_path("icon/icon.png")), (32, 32)))
 
 reloju = pygame.time.Clock()
 
-if sound_enabled:
-    ate = pygame.mixer.Sound(resource_path("sfx/hungrySchlange.wav"))
-    dmg = pygame.mixer.Sound(resource_path("sfx/slicedSchlange.wav"))
-    death = pygame.mixer.Sound(resource_path("sfx/SchlangeIsDead.wav"))
+ate = pygame.mixer.Sound(resource_path("sfx/hungrySchlange.wav"))
+dmg = pygame.mixer.Sound(resource_path("sfx/slicedSchlange.wav"))
+death = pygame.mixer.Sound(resource_path("sfx/SchlangeIsDead.wav"))
+
+SWIPE_MIN = 24
+PAUSE_BTN = pygame.Rect(mona.w - 60, 10, 50, 50)
+QUIT_BTN = pygame.Rect(10, mona.h - 50, 110, 40)
+
+touch_anchor = None
+swiped = False
+
+
+def turn(direction: str) -> None:
+    if direction == "up" and Schlange.way != 4:
+        Schlange.way = 21
+    elif direction == "left" and Schlange.way != 18:
+        Schlange.way = 12
+    elif direction == "down" and Schlange.way != 21:
+        Schlange.way = 4
+    elif direction == "right" and Schlange.way != 12:
+        Schlange.way = 18
+
+
+def quit_game() -> None:
+    global besto
+    if pintos > besto:
+        besto = pintos
+        saveIt(besto)
+    pygame.quit()
+    sys.exit()
+
+
+def handle_tap(pos) -> None:
+    global paused, gameState
+
+    if gameState == 0:
+        if not paused:
+            if PAUSE_BTN.collidepoint(pos):
+                paused = True
+        else:
+            if QUIT_BTN.collidepoint(pos):
+                quit_game()
+            else:
+                Schlange.way = lastWay
+                paused = False
+
+    elif gameState == 0.5:
+        death.play()
+        gameState = 1
+
+    elif gameState == 1:
+        reset()
 
 while True:
     reloju.tick(60)
@@ -117,6 +164,28 @@ while True:
 
         if event.type == pygame.WINDOWMINIMIZED:
             paused = True
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            touch_anchor = event.pos
+            swiped = False
+
+        elif event.type == pygame.MOUSEMOTION and touch_anchor is not None:
+            dx = event.pos[0] - touch_anchor[0]
+            dy = event.pos[1] - touch_anchor[1]
+
+            if max(abs(dx), abs(dy)) >= SWIPE_MIN:
+                if gameState == 0 and not paused:
+                    if abs(dx) > abs(dy):
+                        turn("right" if dx > 0 else "left")
+                    else:
+                        turn("down" if dy > 0 else "up")
+                swiped = True
+                touch_anchor = event.pos
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if not swiped:
+                handle_tap(event.pos)
+            touch_anchor = None
 
         if event.type == pygame.KEYDOWN:
 
@@ -159,8 +228,7 @@ while True:
             elif gameState == 0.5:
 
                 if event.key in [pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER]:
-                    if sound_enabled:
-                        death.play()
+                    death.play()
                     gameState = 1
 
                 if event.key == pygame.K_ESCAPE:
@@ -232,8 +300,7 @@ while True:
                         Apfel.x = randint(Apfel.r, mona.w - Apfel.r)
                         Apfel.y = randint(Apfel.r, mona.h - Apfel.r)
 
-                    if sound_enabled:
-                        ate.play()
+                    ate.play()
                     Schlange.tamain += 1
                     pintos += 1
 
@@ -242,6 +309,11 @@ while True:
                     gameState = 0.5
 
                 monalisa.blit(pointuacao, (20, mona.h - 462))
+
+                pygame.draw.rect(monalisa, (0, 0, 0), PAUSE_BTN, border_radius=8)
+                pygame.draw.rect(monalisa, (255, 255, 255), (PAUSE_BTN.x + 15, PAUSE_BTN.y + 12, 7, 26))
+                pygame.draw.rect(monalisa, (255, 255, 255), (PAUSE_BTN.x + 28, PAUSE_BTN.y + 12, 7, 26))
+
                 pygame.display.flip()
 
             else:
@@ -268,7 +340,10 @@ while True:
 
                 monalisa.blit(pointuacao, (20, mona.h - 462))
                 monalisa.blit(pauseT, pauseTPos)
-                monalisa.blit(escTesc, (1, mona.h - 30))
+                monalisa.blit(tocarContinuar, tocarContinuar.get_rect(center=(mona.w / 2, mona.h / 2 + 40)))
+
+                pygame.draw.rect(monalisa, (0, 0, 0), QUIT_BTN, border_radius=8)
+                monalisa.blit(sairT, sairT.get_rect(center=QUIT_BTN.center))
 
                 pygame.display.flip()
 
@@ -286,13 +361,11 @@ while True:
                     for _ in range(min(6, len(body))):
                         del body[0]
 
-                    if sound_enabled:
-                        dmg.play()
+                    dmg.play()
 
                 else:
 
-                    if sound_enabled:
-                        death.play()
+                    death.play()
                     gameState = 1
 
             bigBoy(body, False)
@@ -321,7 +394,7 @@ while True:
 
             monalisa.blit(gameOver, gameOverPos)
             monalisa.blit(pointuacao, pointuacaoPos)
-            monalisa.blit(escTesc, (1, mona.h - 30))
+            monalisa.blit(tocarReiniciar, (1, mona.h - 30))
 
             if hi:
                 monalisa.blit(beaten_hiScore, beaten_hiScorePos)
